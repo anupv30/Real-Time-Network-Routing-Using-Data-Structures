@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Play, Pause, Square, RotateCcw, Zap, Wifi, WifiOff } from 'lucide-react';
+import { Activity, Play, Pause, Square, RotateCcw, Zap, Wifi, WifiOff, Menu } from 'lucide-react';
 import { ConnectionStatus } from '../../hooks/useSimulation';
 
 interface NavbarProps {
@@ -13,6 +13,10 @@ interface NavbarProps {
   onStop: () => void;
   onReset: () => void;
   onSpeedChange: (speed: number) => void;
+  isMenuOpen?: boolean;
+  onMenuEnter?: () => void;
+  onMenuLeave?: () => void;
+  onMenuToggle?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -26,11 +30,30 @@ export const Navbar: React.FC<NavbarProps> = ({
   onStop,
   onReset,
   onSpeedChange,
+  isMenuOpen = false,
+  onMenuEnter,
+  onMenuLeave,
+  onMenuToggle,
 }) => {
   return (
-    <header className="h-14 border-b border-[#1f293d] bg-[#0d1322] px-4 flex items-center justify-between select-none">
-      {/* Brand */}
-      <div className="flex items-center gap-3">
+    <header className="h-14 border-b border-[#1f293d] bg-[#0d1322] px-4 flex items-center justify-between select-none z-30 relative">
+      {/* Brand & Hamburger Button */}
+      <div className="flex items-center gap-2.5">
+        <button
+          id="hamburger-menu-button"
+          onMouseEnter={onMenuEnter}
+          onMouseLeave={onMenuLeave}
+          onClick={onMenuToggle}
+          className={`p-2 rounded-lg transition-all flex items-center justify-center group ${
+            isMenuOpen
+              ? 'bg-blue-600/20 text-cyan-300 border border-cyan-500/40 shadow-xs'
+              : 'text-gray-400 hover:text-cyan-300 hover:bg-[#141b2d] border border-transparent'
+          }`}
+          title="Navigation Menu (hover to open)"
+        >
+          <Menu className="w-5 h-5 transition-transform group-hover:scale-105" />
+        </button>
+
         <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
           <Activity className="w-5 h-5 animate-pulse" />
         </div>

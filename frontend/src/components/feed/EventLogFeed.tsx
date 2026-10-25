@@ -1,13 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { EventLogItem } from '../../types';
-import { Terminal, Filter, Trash2, CheckCircle2, AlertTriangle, AlertOctagon, Info } from 'lucide-react';
+import { Terminal, Filter, Trash2, CheckCircle2, AlertTriangle, AlertOctagon, Info, X } from 'lucide-react';
 
 interface EventLogFeedProps {
   events: EventLogItem[];
   onSelectPacket?: (packetId: string) => void;
+  onClose?: () => void;
 }
 
-export const EventLogFeed: React.FC<EventLogFeedProps> = ({ events, onSelectPacket }) => {
+export const EventLogFeed: React.FC<EventLogFeedProps> = ({ events, onSelectPacket, onClose }) => {
   const [filterSeverity, setFilterSeverity] = useState<string>('all');
   const [search, setSearch] = useState<string>('');
   const [clearedBefore, setClearedBefore] = useState<number>(0);
@@ -81,6 +82,17 @@ export const EventLogFeed: React.FC<EventLogFeedProps> = ({ events, onSelectPack
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
+
+          {/* Close button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              title="Close Event Feed (reopen from bottom edge or layout dock)"
+              className="p-1 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200 ml-1 border-l border-gray-700/60 pl-2"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useSimulation } from './hooks/useSimulation';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
@@ -14,6 +14,31 @@ import { DocumentationPage } from './pages/DocumentationPage';
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('simulator');
   const [shortestPathQuery, setShortestPathQuery] = useState<{ source: string; destination: string } | null>(null);
+
+  // Hamburger Sidebar State (Hover to reveal, auto-close)
+  const [isSidebarHovered, setIsSidebarHovered] = useState<boolean>(false);
+  const sidebarTimeoutRef = useRef<number | null>(null);
+
+  const handleSidebarEnter = () => {
+    if (sidebarTimeoutRef.current) {
+      clearTimeout(sidebarTimeoutRef.current);
+      sidebarTimeoutRef.current = null;
+    }
+    setIsSidebarHovered(true);
+  };
+
+  const handleSidebarLeave = () => {
+    sidebarTimeoutRef.current = window.setTimeout(() => {
+      setIsSidebarHovered(false);
+    }, 220);
+  };
+
+  const handleMenuToggle = () => {
+    setIsSidebarHovered((prev) => !prev);
+  };
+
+  const isSidebarOpen = isSidebarHovered;
+
   const {
     snapshot,
     connectionStatus,
@@ -38,11 +63,24 @@ export function App() {
         onStop={actions.stop}
         onReset={actions.reset}
         onSpeedChange={(speed) => actions.updateConfig({ speed_multiplier: speed })}
+        isMenuOpen={isSidebarOpen}
+        onMenuEnter={handleSidebarEnter}
+        onMenuLeave={handleSidebarLeave}
+        onMenuToggle={handleMenuToggle}
       />
 
       {/* Main Body with Sidebar + Active Page */}
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      <div className="flex flex-1 overflow-hidden relative">
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          isOpen={isSidebarOpen}
+          onMouseEnter={handleSidebarEnter}
+          onMouseLeave={handleSidebarLeave}
+          onClose={() => {
+            setIsSidebarHovered(false);
+          }}
+        />
 
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {activeTab === 'overview' && (

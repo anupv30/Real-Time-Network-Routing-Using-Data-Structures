@@ -6,7 +6,8 @@ import {
   Send,
   Zap,
   Layers,
-  ArrowRight
+  ArrowRight,
+  X
 } from 'lucide-react';
 import { PacketPriority } from '../../types';
 
@@ -30,6 +31,7 @@ interface ControlBarProps {
     gen_priority?: PacketPriority;
   }) => void;
   onInjectPacket: (source: string, destination: string, priority: PacketPriority) => Promise<any>;
+  onClose?: () => void;
 }
 
 export const SimulationControlBar: React.FC<ControlBarProps> = ({
@@ -46,6 +48,7 @@ export const SimulationControlBar: React.FC<ControlBarProps> = ({
   onStep,
   onConfigChange,
   onInjectPacket,
+  onClose,
 }) => {
   const [injecting, setInjecting] = useState(false);
 
@@ -190,6 +193,17 @@ export const SimulationControlBar: React.FC<ControlBarProps> = ({
           <Send className="w-3 h-3" />
           {injecting ? 'Sending...' : 'Send Packet'}
         </button>
+
+        {/* Close Button */}
+        {onClose && (
+          <button
+            onClick={onClose}
+            title="Close Quick Controls bar (reopen from layout dock)"
+            className="p-1 rounded text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition ml-2 border-l border-gray-700/60 pl-2"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
     </div>
   );

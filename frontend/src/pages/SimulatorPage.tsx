@@ -15,7 +15,14 @@ import {
   AlertTriangle,
   Eye,
   EyeOff,
-  Route
+  Route,
+  BarChart2,
+  SlidersHorizontal,
+  ChevronLeft,
+  ChevronUp,
+  Terminal,
+  RotateCcw,
+  Layers
 } from 'lucide-react';
 
 interface SimulatorPageProps {
@@ -97,6 +104,73 @@ export const SimulatorPage: React.FC<SimulatorPageProps> = ({
 
   // Selected Packet Journey Tracking State
   const [selectedPacketId, setSelectedPacketId] = useState<string | null>(null);
+
+  // Panels Visibility Management (Open/Close options for all main tabs)
+  const [showMetrics, setShowMetrics] = useState<boolean>(() => {
+    return localStorage.getItem('netsim_panel_metrics') !== 'false';
+  });
+  const [showShortestPath, setShowShortestPath] = useState<boolean>(() => {
+    return localStorage.getItem('netsim_panel_shortest_path') !== 'false';
+  });
+  const [showInspector, setShowInspector] = useState<boolean>(() => {
+    return localStorage.getItem('netsim_panel_inspector') !== 'false';
+  });
+  const [showControls, setShowControls] = useState<boolean>(() => {
+    return localStorage.getItem('netsim_panel_controls') !== 'false';
+  });
+  const [showEventFeed, setShowEventFeed] = useState<boolean>(() => {
+    return localStorage.getItem('netsim_panel_event_feed') !== 'false';
+  });
+
+  const togglePanel = (panel: 'metrics' | 'shortestPath' | 'inspector' | 'controls' | 'eventFeed') => {
+    switch (panel) {
+      case 'metrics':
+        setShowMetrics((prev) => {
+          localStorage.setItem('netsim_panel_metrics', String(!prev));
+          return !prev;
+        });
+        break;
+      case 'shortestPath':
+        setShowShortestPath((prev) => {
+          localStorage.setItem('netsim_panel_shortest_path', String(!prev));
+          return !prev;
+        });
+        break;
+      case 'inspector':
+        setShowInspector((prev) => {
+          localStorage.setItem('netsim_panel_inspector', String(!prev));
+          return !prev;
+        });
+        break;
+      case 'controls':
+        setShowControls((prev) => {
+          localStorage.setItem('netsim_panel_controls', String(!prev));
+          return !prev;
+        });
+        break;
+      case 'eventFeed':
+        setShowEventFeed((prev) => {
+          localStorage.setItem('netsim_panel_event_feed', String(!prev));
+          return !prev;
+        });
+        break;
+    }
+  };
+
+  const showAllPanels = () => {
+    setShowMetrics(true);
+    setShowShortestPath(true);
+    setShowInspector(true);
+    setShowControls(true);
+    setShowEventFeed(true);
+    localStorage.setItem('netsim_panel_metrics', 'true');
+    localStorage.setItem('netsim_panel_shortest_path', 'true');
+    localStorage.setItem('netsim_panel_inspector', 'true');
+    localStorage.setItem('netsim_panel_controls', 'true');
+    localStorage.setItem('netsim_panel_event_feed', 'true');
+  };
+
+  const anyPanelClosed = !showMetrics || !showShortestPath || !showInspector || !showControls || !showEventFeed;
 
   // Reset selected packet if simulation is reset
   useEffect(() => {
@@ -198,100 +272,113 @@ export const SimulatorPage: React.FC<SimulatorPageProps> = ({
   }, [dijkstraResult, links]);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#0b0f19] overflow-hidden">
-      {/* Top KPI Cards */}
-      <KpiCards metrics={metrics} />
+    <div className="flex-1 flex flex-col h-full bg-[#0b0f19] overflow-hidden relative">
+      {/* Top KPI Cards (Togglable) */}
+      {showMetrics && (
+        <KpiCards metrics={metrics} onClose={() => togglePanel('metrics')} />
+      )}
 
-      {/* Dijkstra Shortest-Path & Edge Weights Toolbar */}
-      <div className="shrink-0 bg-[#0d1322] border-y border-[#1f293d] px-4 py-2 flex flex-wrap items-center justify-between gap-3 text-xs select-none shadow-sm">
-        {/* Left: Dijkstra Controls */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1.5 font-mono text-cyan-400 font-bold uppercase tracking-wider text-[11px]">
-            <Route className="w-4 h-4 text-emerald-400" />
-            <span>Shortest Path</span>
-          </div>
+      {/* Dijkstra Shortest-Path & Edge Weights Toolbar (Togglable) */}
+      {showShortestPath && (
+        <div className="shrink-0 bg-[#0d1322] border-y border-[#1f293d] px-4 py-2 flex flex-wrap items-center justify-between gap-3 text-xs select-none shadow-sm transition-all">
+          {/* Left: Dijkstra Controls */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5 font-mono text-cyan-400 font-bold uppercase tracking-wider text-[11px]">
+              <Route className="w-4 h-4 text-emerald-400" />
+              <span>Shortest Path</span>
+            </div>
 
-          {/* Source Dropdown */}
-          <div className="flex items-center gap-1 text-gray-400 bg-gray-900 border border-gray-700 px-2 py-1 rounded-lg font-mono">
-            <span>Src:</span>
-            <select
-              value={pathSource}
-              onChange={(e) => setPathSource(e.target.value)}
-              className="bg-transparent text-gray-200 font-bold focus:outline-none cursor-pointer"
-            >
-              {routerList.map((r) => (
-                <option key={r} value={r} className="bg-gray-900 text-gray-200">
-                  {r} {routers[r]?.status === 'failed' ? '(Offline)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
+            {/* Source Dropdown */}
+            <div className="flex items-center gap-1 text-gray-400 bg-gray-900 border border-gray-700 px-2 py-1 rounded-lg font-mono">
+              <span>Src:</span>
+              <select
+                value={pathSource}
+                onChange={(e) => setPathSource(e.target.value)}
+                className="bg-transparent text-gray-200 font-bold focus:outline-none cursor-pointer"
+              >
+                {routerList.map((r) => (
+                  <option key={r} value={r} className="bg-gray-900 text-gray-200">
+                    {r} {routers[r]?.status === 'failed' ? '(Offline)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <ArrowRight className="w-3.5 h-3.5 text-gray-500" />
+            <ArrowRight className="w-3.5 h-3.5 text-gray-500" />
 
-          {/* Destination Dropdown */}
-          <div className="flex items-center gap-1 text-gray-400 bg-gray-900 border border-gray-700 px-2 py-1 rounded-lg font-mono">
-            <span>Dst:</span>
-            <select
-              value={pathDestination}
-              onChange={(e) => setPathDestination(e.target.value)}
-              className="bg-transparent text-gray-200 font-bold focus:outline-none cursor-pointer"
-            >
-              {routerList.map((r) => (
-                <option key={r} value={r} className="bg-gray-900 text-gray-200">
-                  {r} {routers[r]?.status === 'failed' ? '(Offline)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
+            {/* Destination Dropdown */}
+            <div className="flex items-center gap-1 text-gray-400 bg-gray-900 border border-gray-700 px-2 py-1 rounded-lg font-mono">
+              <span>Dst:</span>
+              <select
+                value={pathDestination}
+                onChange={(e) => setPathDestination(e.target.value)}
+                className="bg-transparent text-gray-200 font-bold focus:outline-none cursor-pointer"
+              >
+                {routerList.map((r) => (
+                  <option key={r} value={r} className="bg-gray-900 text-gray-200">
+                    {r} {routers[r]?.status === 'failed' ? '(Offline)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          {/* Highlight Button */}
-          <button
-            onClick={handleHighlightPath}
-            disabled={computingPath || pathSource === pathDestination}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold shadow transition ${
-              isPathHighlighted
-                ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-                : 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:from-blue-500 hover:to-cyan-500'
-            } disabled:opacity-50`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            {computingPath ? 'Computing...' : 'Highlight Shortest Path'}
-          </button>
-
-          {/* Clear Highlight Button */}
-          {isPathHighlighted && (
+            {/* Highlight Button */}
             <button
-              onClick={handleClearHighlight}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-800 text-gray-300 hover:bg-rose-950/40 hover:text-rose-300 border border-gray-700 transition"
+              onClick={handleHighlightPath}
+              disabled={computingPath || pathSource === pathDestination}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold shadow transition ${
+                isPathHighlighted
+                  ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                  : 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:from-blue-500 hover:to-cyan-500'
+              } disabled:opacity-50`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {computingPath ? 'Computing...' : 'Highlight Shortest Path'}
+            </button>
+
+            {/* Clear Highlight Button */}
+            {isPathHighlighted && (
+              <button
+                onClick={handleClearHighlight}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gray-800 text-gray-300 hover:bg-rose-950/40 hover:text-rose-300 border border-gray-700 transition"
+              >
+                <X className="w-3.5 h-3.5" />
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Right: Edge Weights Visibility Toggle & Close Toolbar Button */}
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 cursor-pointer font-medium text-gray-300 text-[11px] bg-gray-900/60 border border-gray-800 px-2.5 py-1 rounded-lg hover:border-gray-700 transition">
+              <input
+                type="checkbox"
+                checked={showLinkWeights}
+                onChange={(e) => setShowLinkWeights(e.target.checked)}
+                className="w-3.5 h-3.5 rounded text-cyan-600 focus:ring-0 bg-gray-900 border-gray-700"
+              />
+              {showLinkWeights ? (
+                <Eye className="w-3.5 h-3.5 text-cyan-400" />
+              ) : (
+                <EyeOff className="w-3.5 h-3.5 text-gray-500" />
+              )}
+              <span>Show Edge Weights (Cost · Latency)</span>
+            </label>
+
+            {/* Close Shortest Path bar button */}
+            <button
+              onClick={() => togglePanel('shortestPath')}
+              title="Close Shortest Path bar (reopen from layout dock)"
+              className="p-1 rounded text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition ml-1 border-l border-gray-700/60 pl-2"
             >
               <X className="w-3.5 h-3.5" />
-              Clear
             </button>
-          )}
+          </div>
         </div>
+      )}
 
-        {/* Right: Edge Weights Visibility Toggle */}
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 cursor-pointer font-medium text-gray-300 text-[11px] bg-gray-900/60 border border-gray-800 px-2.5 py-1 rounded-lg hover:border-gray-700 transition">
-            <input
-              type="checkbox"
-              checked={showLinkWeights}
-              onChange={(e) => setShowLinkWeights(e.target.checked)}
-              className="w-3.5 h-3.5 rounded text-cyan-600 focus:ring-0 bg-gray-900 border-gray-700"
-            />
-            {showLinkWeights ? (
-              <Eye className="w-3.5 h-3.5 text-cyan-400" />
-            ) : (
-              <EyeOff className="w-3.5 h-3.5 text-gray-500" />
-            )}
-            <span>Show Edge Weights (Cost · Latency)</span>
-          </label>
-        </div>
-      </div>
-
-      {/* Shortest-Path Cost Breakdown Banner (Displays when a path is active) */}
-      {isPathHighlighted && dijkstraResult && (
+      {/* Shortest-Path Cost Breakdown Banner (Displays when a path is active and toolbar is open) */}
+      {showShortestPath && isPathHighlighted && dijkstraResult && (
         <div
           className={`shrink-0 px-4 py-2 border-b text-xs flex flex-wrap items-center justify-between gap-3 shadow-md transition-all ${
             dijkstraResult.is_reachable
@@ -356,8 +443,99 @@ export const SimulatorPage: React.FC<SimulatorPageProps> = ({
         </div>
       )}
 
-      {/* Main Workspace (Canvas + Inspector) */}
+      {/* Main Workspace (Canvas + Inspector + Floating Layout Dock) */}
       <div className="flex-1 flex relative min-h-0 min-w-0 overflow-hidden">
+        {/* Floating View Panels Dock (Open/Close tabs toggle bar) */}
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-[#090d18]/90 backdrop-blur-md border border-[#1f293d] p-1 rounded-xl shadow-2xl select-none text-xs">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 text-gray-400 font-mono text-[11px] border-r border-[#1f293d] mr-0.5">
+            <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="font-semibold text-gray-300 hidden md:inline">Panels:</span>
+          </div>
+
+          {/* Toggle Metrics */}
+          <button
+            onClick={() => togglePanel('metrics')}
+            title={showMetrics ? 'Close Metrics Cards' : 'Open Metrics Cards'}
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition ${
+              showMetrics
+                ? 'bg-blue-600/20 text-cyan-300 border border-cyan-500/30 shadow-xs'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-[#141b2d] opacity-60'
+            }`}
+          >
+            <BarChart2 className="w-3.5 h-3.5" />
+            <span>Metrics</span>
+          </button>
+
+          {/* Toggle Shortest Path */}
+          <button
+            onClick={() => togglePanel('shortestPath')}
+            title={showShortestPath ? 'Close Shortest Path bar' : 'Open Shortest Path bar'}
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition ${
+              showShortestPath
+                ? 'bg-blue-600/20 text-cyan-300 border border-cyan-500/30 shadow-xs'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-[#141b2d] opacity-60'
+            }`}
+          >
+            <Route className="w-3.5 h-3.5" />
+            <span>Shortest Path</span>
+          </button>
+
+          {/* Toggle Inspector */}
+          <button
+            onClick={() => togglePanel('inspector')}
+            title={showInspector ? 'Close Inspector Panel' : 'Open Inspector Panel'}
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition ${
+              showInspector
+                ? 'bg-blue-600/20 text-cyan-300 border border-cyan-500/30 shadow-xs'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-[#141b2d] opacity-60'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Inspector</span>
+          </button>
+
+          {/* Toggle Controls */}
+          <button
+            onClick={() => togglePanel('controls')}
+            title={showControls ? 'Close Controls bar' : 'Open Controls bar'}
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition ${
+              showControls
+                ? 'bg-blue-600/20 text-cyan-300 border border-cyan-500/30 shadow-xs'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-[#141b2d] opacity-60'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Controls</span>
+          </button>
+
+          {/* Toggle Event Feed */}
+          <button
+            onClick={() => togglePanel('eventFeed')}
+            title={showEventFeed ? 'Close Event Feed' : 'Open Event Feed'}
+            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition ${
+              showEventFeed
+                ? 'bg-blue-600/20 text-cyan-300 border border-cyan-500/30 shadow-xs'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-[#141b2d] opacity-60'
+            }`}
+          >
+            <Terminal className="w-3.5 h-3.5" />
+            <span>Event Feed</span>
+          </button>
+
+          {/* Reset / Show All Button */}
+          {anyPanelClosed && (
+            <button
+              onClick={showAllPanels}
+              title="Restore all panels"
+              className="flex items-center gap-1 px-2 py-1 ml-1 rounded-lg text-[10px] font-mono text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/70 border border-cyan-600/50 transition"
+            >
+              <RotateCcw className="w-3 h-3 text-cyan-400" />
+              <span>Show All</span>
+            </button>
+          )}
+        </div>
+
+        {/* Network Canvas */}
         <NetworkCanvas
           routers={routers}
           links={links}
@@ -380,41 +558,84 @@ export const SimulatorPage: React.FC<SimulatorPageProps> = ({
           onSelectPacket={(pktId) => setSelectedPacketId(pktId)}
         />
 
-        <InspectorPanel
-          selectedNode={selectedNode}
-          selectedLink={selectedLink}
-          selectedPacketId={selectedPacketId}
-          onSelectPacket={(pktId) => setSelectedPacketId(pktId)}
-          onToggleRouterFailure={onToggleRouterFailure}
-          onToggleRouterCongestion={onToggleRouterCongestion}
-          onToggleLinkFailure={onToggleLinkFailure}
-          onToggleLinkCongestion={onToggleLinkCongestion}
-          isSimRunning={snapshot?.state === 'running'}
-        />
+        {/* Right edge tab to reopen Inspector if closed */}
+        {!showInspector && (
+          <button
+            onClick={() => togglePanel('inspector')}
+            title="Open Topology Inspector / Packet Tracker"
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-30 bg-[#0d1322]/95 hover:bg-[#141b2d] text-gray-300 hover:text-cyan-400 border-l border-y border-[#1f293d] rounded-l-lg py-3 px-1.5 shadow-2xl flex flex-col items-center gap-1.5 transition text-[10px] font-mono group cursor-pointer"
+          >
+            <ChevronLeft className="w-4 h-4 text-cyan-400 transition-transform group-hover:-translate-x-0.5" />
+            <span className="[writing-mode:vertical-rl] tracking-wider text-gray-400 group-hover:text-gray-200">
+              INSPECTOR
+            </span>
+          </button>
+        )}
+
+        {/* Inspector Panel (Togglable) */}
+        {showInspector && (
+          <InspectorPanel
+            selectedNode={selectedNode}
+            selectedLink={selectedLink}
+            selectedPacketId={selectedPacketId}
+            onSelectPacket={(pktId) => setSelectedPacketId(pktId)}
+            onToggleRouterFailure={onToggleRouterFailure}
+            onToggleRouterCongestion={onToggleRouterCongestion}
+            onToggleLinkFailure={onToggleLinkFailure}
+            onToggleLinkCongestion={onToggleLinkCongestion}
+            isSimRunning={snapshot?.state === 'running'}
+            onClose={() => togglePanel('inspector')}
+          />
+        )}
       </div>
 
-      {/* Simulation Control Bar */}
-      <SimulationControlBar
-        simState={snapshot?.state || 'stopped'}
-        autoGenerate={snapshot?.auto_generate || false}
-        generationRatePps={snapshot?.generation_rate_pps || 2.0}
-        sourceRouter={snapshot?.gen_source || routerList[0] || ''}
-        destinationRouter={snapshot?.gen_destination || routerList[routerList.length - 1] || ''}
-        priority={snapshot?.gen_priority || 'normal'}
-        routerList={routerList}
-        onStart={onStart}
-        onPause={onPause}
-        onResume={onResume}
-        onStep={onStep}
-        onConfigChange={onConfigChange}
-        onInjectPacket={onInjectPacket}
-      />
+      {/* Simulation Control Bar (Togglable) */}
+      {showControls && (
+        <SimulationControlBar
+          simState={snapshot?.state || 'stopped'}
+          autoGenerate={snapshot?.auto_generate || false}
+          generationRatePps={snapshot?.generation_rate_pps || 2.0}
+          sourceRouter={snapshot?.gen_source || routerList[0] || ''}
+          destinationRouter={snapshot?.gen_destination || routerList[routerList.length - 1] || ''}
+          priority={snapshot?.gen_priority || 'normal'}
+          routerList={routerList}
+          onStart={onStart}
+          onPause={onPause}
+          onResume={onResume}
+          onStep={onStep}
+          onConfigChange={onConfigChange}
+          onInjectPacket={onInjectPacket}
+          onClose={() => togglePanel('controls')}
+        />
+      )}
 
-      {/* Live Event Feed at bottom */}
-      <EventLogFeed
-        events={snapshot?.recent_events || []}
-        onSelectPacket={(pktId) => setSelectedPacketId(pktId)}
-      />
+      {/* Bottom edge bar to reopen Event Feed if closed */}
+      {!showEventFeed && (
+        <button
+          onClick={() => togglePanel('eventFeed')}
+          title="Open Simulation Event Feed"
+          className="shrink-0 h-7 bg-[#0a0e1a] hover:bg-[#0d1322] border-t border-[#1f293d] px-3 flex items-center justify-between text-gray-400 hover:text-cyan-300 text-xs transition cursor-pointer select-none group"
+        >
+          <div className="flex items-center gap-2 font-mono text-[11px]">
+            <ChevronUp className="w-3.5 h-3.5 text-cyan-400 group-hover:-translate-y-0.5 transition-transform" />
+            <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="font-semibold text-gray-300">Simulation Event Feed</span>
+            <span className="text-[10px] text-gray-400">({snapshot?.recent_events?.length || 0} events)</span>
+          </div>
+          <span className="text-[10px] text-gray-400 group-hover:text-cyan-300 bg-gray-900 border border-gray-800 px-2 py-0.5 rounded font-mono">
+            + Click to restore
+          </span>
+        </button>
+      )}
+
+      {/* Live Event Feed at bottom (Togglable) */}
+      {showEventFeed && (
+        <EventLogFeed
+          events={snapshot?.recent_events || []}
+          onSelectPacket={(pktId) => setSelectedPacketId(pktId)}
+          onClose={() => togglePanel('eventFeed')}
+        />
+      )}
     </div>
   );
 };

@@ -7,16 +7,18 @@ import {
   Clock,
   Gauge,
   Shuffle,
-  Layers
+  Layers,
+  X
 } from 'lucide-react';
 
 interface KpiCardsProps {
   metrics: SimulationMetrics;
+  onClose?: () => void;
 }
 
-export const KpiCards: React.FC<KpiCardsProps> = ({ metrics }) => {
+export const KpiCards: React.FC<KpiCardsProps> = ({ metrics, onClose }) => {
   return (
-    <div className="flex shrink-0 gap-2.5 overflow-x-auto p-3 bg-[#0d1322] border-b border-[#1f293d] select-none">
+    <div className="flex shrink-0 items-center gap-2.5 overflow-x-auto p-3 bg-[#0d1322] border-b border-[#1f293d] select-none transition-all">
       {/* Generated */}
       <div className="min-w-[145px] flex-1 bg-[#141b2d] border border-[#1f293d] rounded-lg p-2.5 flex items-center justify-between">
         <div>
@@ -91,6 +93,17 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ metrics }) => {
         </div>
         <Shuffle className="w-4 h-4 text-indigo-400" />
       </div>
+
+      {/* Close Button */}
+      {onClose && (
+        <button
+          onClick={onClose}
+          title="Close Metrics cards (can reopen from layout dock)"
+          className="shrink-0 p-1.5 self-center text-gray-500 hover:text-gray-200 hover:bg-[#1a2234] rounded-lg transition"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 };

@@ -11,7 +11,8 @@ import {
   ArrowRight,
   Info,
   Navigation,
-  Network
+  Network,
+  X
 } from 'lucide-react';
 
 interface InspectorPanelProps {
@@ -24,6 +25,7 @@ interface InspectorPanelProps {
   onToggleLinkFailure: (id: string) => void;
   onToggleLinkCongestion: (id: string) => void;
   isSimRunning?: boolean;
+  onClose?: () => void;
 }
 
 export const InspectorPanel: React.FC<InspectorPanelProps> = ({
@@ -36,6 +38,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   onToggleLinkFailure,
   onToggleLinkCongestion,
   isSimRunning = false,
+  onClose,
 }) => {
   const [activeTab, setActiveTab] = useState<'topology' | 'journey'>('topology');
 
@@ -88,6 +91,17 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           )}
         </button>
+
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close Inspector panel (reopen from right edge or layout dock)"
+            className="p-1 rounded text-gray-400 hover:text-gray-200 hover:bg-[#182238] transition"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Tab 1: Topology Inspector Content */}
