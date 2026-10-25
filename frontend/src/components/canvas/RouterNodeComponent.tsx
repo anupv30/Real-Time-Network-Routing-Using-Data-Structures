@@ -9,20 +9,47 @@ interface RouterNodeProps {
     isSelected: boolean;
     onToggleFailure: (id: string) => void;
     onToggleCongestion: (id: string) => void;
+    isPathSource?: boolean;
+    isPathDestination?: boolean;
+    isPathNode?: boolean;
+    pathHopIndex?: number;
+    isDimmed?: boolean;
   };
 }
 
 export const RouterNodeComponent: React.FC<RouterNodeProps> = ({ data }) => {
-  const { router, isSelected, onToggleFailure, onToggleCongestion } = data;
+  const {
+    router,
+    isSelected,
+    onToggleFailure,
+    onToggleCongestion,
+    isPathSource,
+    isPathDestination,
+    isPathNode,
+    pathHopIndex,
+    isDimmed,
+  } = data;
 
   const isFailed = router.status === 'failed';
   const isCongested = router.status === 'congested';
 
-  const statusColor = isFailed
+  let statusColor = isFailed
     ? 'border-red-500 bg-red-950/40 text-red-400'
     : isCongested
     ? 'border-amber-500 bg-amber-950/40 text-amber-400'
     : 'border-blue-500/50 bg-[#111827] text-gray-200';
+
+  if (!isFailed) {
+    if (isPathSource) {
+      statusColor = 'border-emerald-400 ring-2 ring-emerald-400/80 bg-[#062c22] text-emerald-100 shadow-lg shadow-emerald-950/80';
+    } else if (isPathDestination) {
+      statusColor = 'border-fuchsia-400 ring-2 ring-fuchsia-400/80 bg-[#2d1238] text-fuchsia-100 shadow-lg shadow-fuchsia-950/80';
+    } else if (isPathNode) {
+      statusColor = 'border-cyan-400 ring-1 ring-cyan-400/60 bg-[#082f49] text-cyan-100 shadow-lg shadow-cyan-950/80';
+    }
+  }
+
+  const dimClass = isDimmed && !isFailed ? 'opacity-35 hover:opacity-100 transition-opacity' : '';
 
   const utilPct = router.queue_utilization_pct || 0;
   const utilBarColor =
@@ -30,7 +57,7 @@ export const RouterNodeComponent: React.FC<RouterNodeProps> = ({ data }) => {
 
   return (
     <div
-      className={`min-w-[170px] rounded-xl border-2 transition-all p-3 shadow-xl backdrop-blur-md ${statusColor} ${
+      className={`min-w-[170px] rounded-xl border-2 transition-all p-3 shadow-xl backdrop-blur-md ${statusColor} ${dimClass} ${
         isSelected ? 'ring-2 ring-cyan-400 ring-offset-2 ring-offset-[#0b0f19]' : ''
       }`}
     >
@@ -48,17 +75,34 @@ export const RouterNodeComponent: React.FC<RouterNodeProps> = ({ data }) => {
           />
           <span className="font-mono font-bold text-xs tracking-wide">{router.id}</span>
         </div>
-        <span
-          className={`text-[9px] font-mono px-1.5 py-0.5 rounded uppercase font-semibold ${
-            isFailed
-              ? 'bg-red-900/60 text-red-300'
-              : isCongested
-              ? 'bg-amber-900/60 text-amber-300'
-              : 'bg-emerald-900/50 text-emerald-300'
-          }`}
-        >
-          {router.status}
-        </span>
+        <div className="flex items-center gap-1">
+          {isPathSource && !isFailed && (
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase bg-emerald-500 text-emerald-950 shadow-sm animate-pulse">
+              SRC
+            </span>
+          )}
+          {isPathDestination && !isFailed && (
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase bg-fuchsia-500 text-fuchsia-950 shadow-sm animate-pulse">
+              DST
+            </span>
+          )}
+          {isPathNode && !isFailed && (
+            <span className="text-[9px] font-mono px-1 py-0.5 rounded font-bold uppercase bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+              #{pathHopIndex}
+            </span>
+          )}
+          <span
+            className={`text-[9px] font-mono px-1.5 py-0.5 rounded uppercase font-semibold ${
+              isFailed
+                ? 'bg-red-900/60 text-red-300'
+                : isCongested
+                ? 'bg-amber-900/60 text-amber-300'
+                : 'bg-emerald-900/50 text-emerald-300'
+            }`}
+          >
+            {router.status}
+          </span>
+        </div>
       </div>
 
       {/* Label */}

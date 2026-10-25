@@ -3,7 +3,9 @@ import {
   ShortestPathResult,
   TopologySummary,
   SimulationHistoryRecord,
-  PacketPriority
+  PacketPriority,
+  PacketJourneyDetails,
+  RecentPacketSummary
 } from '../types';
 
 const API_BASE = '/api';
@@ -101,6 +103,22 @@ export async function injectPacket(payload: {
   return res.json();
 }
 
+export async function injectPacketBurst(payload: {
+  source: string;
+  destination: string;
+  count: number;
+  priority?: PacketPriority;
+  payload_size?: number;
+}) {
+  const res = await fetch(`${API_BASE}/simulation/packet/burst`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  await ensureOk(res, 'Failed to inject packet burst');
+  return res.json();
+}
+
 export async function toggleRouterFailure(routerId: string) {
   const res = await fetch(`${API_BASE}/simulation/failure/router`, {
     method: 'POST',
@@ -176,5 +194,23 @@ export async function saveCurrentRunToHistory(topologyName?: string) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ topology_name: topologyName })
   });
+  return res.json();
+}
+
+export async function fetchRecentPackets(limit: number = 50): Promise<{ packets: RecentPacketSummary[]; total_retained: number }> {
+  const res = await fetch(`${API_BASE}/packets/recent?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch recent packets');
+  return res.json();
+}
+
+export async function fetchPacketJourney(packetId: string): Promise<PacketJourneyDetails> {
+  const res = await fetch(`${API_BASE}/packets/${encodeURIComponent(packetId)}/journey`);
+  await ensureOk(res, 'Failed to fetch packet journey');
+  return res.json();
+}
+
+export async function fetchPacketDetails(packetId: string) {
+  const res = await fetch(`${API_BASE}/packets/${encodeURIComponent(packetId)}`);
+  await ensureOk(res, 'Failed to fetch packet details');
   return res.json();
 }

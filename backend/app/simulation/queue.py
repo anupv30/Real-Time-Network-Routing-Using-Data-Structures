@@ -115,4 +115,16 @@ class RouterQueue:
                 pkt.drop_reason = DropReason.ROUTER_FAILED
                 self.total_dropped += 1
                 dropped_packets.append(pkt)
+
+        # Also drop packet currently being processed by the failed router
+        if self.current_processing_packet:
+            pkt = self.current_processing_packet
+            pkt.status = PacketStatus.DROPPED
+            pkt.drop_reason = DropReason.ROUTER_FAILED
+            self.total_dropped += 1
+            dropped_packets.append(pkt)
+            self.current_processing_packet = None
+            self.is_processing = False
+            self.processing_finish_sim_time = None
+
         return dropped_packets

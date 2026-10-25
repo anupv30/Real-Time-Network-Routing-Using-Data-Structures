@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { SimulationStateSnapshot, RouterState } from '../types';
+import React, { useState, useEffect } from 'react';
+import { SimulationStateSnapshot, RouterState, PacketPriority } from '../types';
 import {
   Layers,
   Cpu,
@@ -9,17 +9,82 @@ import {
   CheckCircle2,
   Clock
 } from 'lucide-react';
+import { LivePacketQueueVisualizer } from '../components/queue/LivePacketQueueVisualizer';
+import { PacketBurstSection } from '../components/controls/PacketBurstSection';
+import * as api from '../services/api';
 
 interface QueueMonitorPageProps {
   snapshot: SimulationStateSnapshot | null;
+  selectedRouterId?: string;
+  onSelectRouter?: (id: string) => void;
+  onStart?: () => void;
+  onPause?: () => void;
+  onResume?: () => void;
+  onStep?: () => void;
+  onReset?: () => void;
+  onInjectPacket?: (source: string, destination: string, priority: PacketPriority) => Promise<any>;
+  onInjectBurst?: (source: string, destination: string, count: number, priority?: PacketPriority) => Promise<any>;
+  onSetRouterSchedulingPolicy?: (routerId: string, policy: 'fifo' | 'priority') => Promise<void>;
+  onConfigChange?: (config: any) => void;
 }
 
-export const QueueMonitorPage: React.FC<QueueMonitorPageProps> = ({ snapshot }) => {
+export const QueueMonitorPage: React.FC<QueueMonitorPageProps> = ({
+  snapshot,
+  selectedRouterId: propSelectedRouterId,
+  onSelectRouter,
+  onStart,
+  onPause,
+  onResume,
+  onStep,
+  onReset,
+  onInjectPacket,
+  onInjectBurst,
+  onSetRouterSchedulingPolicy,
+  onConfigChange,
+}) => {
   const routers = Object.values(snapshot?.routers || {});
-  const [selectedRouterId, setSelectedRouterId] = useState<string>(routers[0]?.id || 'R1');
+  const routerList = Object.keys(snapshot?.routers || {});
+
+  const [localSelectedRouterId, setLocalSelectedRouterId] = useState<string>(
+    propSelectedRouterId || routers[0]?.id || 'R1'
+  );
+  const [destinationRouter, setDestinationRouter] = useState<string>('R5');
+
+  // Keep synced with external selection
+  useEffect(() => {
+    if (propSelectedRouterId && propSelectedRouterId !== localSelectedRouterId) {
+      setLocalSelectedRouterId(propSelectedRouterId);
+    }
+  }, [propSelectedRouterId]);
+
+  const selectedRouterId = localSelectedRouterId || routers[0]?.id || 'R1';
+  const selectedRouter: RouterState | undefined = snapshot?.routers[selectedRouterId];
   const inTransit = snapshot?.in_transit || [];
 
-  const selectedRouter: RouterState | undefined = snapshot?.routers[selectedRouterId];
+  const handleSelectRouter = (id: string) => {
+    setLocalSelectedRouterId(id);
+    onSelectRouter?.(id);
+  };
+
+  // Burst injection handler
+  const handleBurst = async (source: string, destination: string, count: number, priority: PacketPriority) => {
+    if (onInjectBurst) {
+      return await onInjectBurst(source, destination, count, priority);
+    }
+    return await api.injectPacketBurst({ source, destination, count, priority });
+  };
+
+  // Sequential test sequence handler: Low -> Normal -> High -> Critical
+  const handleSequence = async (source: string, destination: string) => {
+    const priorities: PacketPriority[] = ['low', 'normal', 'high', 'critical'];
+    for (const p of priorities) {
+      if (onInjectPacket) {
+        await onInjectPacket(source, destination, p);
+      } else {
+        await api.injectPacket({ source, destination, priority: p });
+      }
+    }
+  };
 
   return (
     <div className="flex-1 overflow-y-auto p-6 bg-[#0b0f19] space-y-6">
@@ -48,7 +113,7 @@ export const QueueMonitorPage: React.FC<QueueMonitorPageProps> = ({ snapshot }) 
           return (
             <div
               key={r.id}
-              onClick={() => setSelectedRouterId(r.id)}
+              onClick={() => handleSelectRouter(r.id)}
               className={`rounded-xl border p-4 cursor-pointer transition-all ${
                 isSelected
                   ? 'border-blue-500 bg-blue-950/20 ring-1 ring-blue-500 shadow-xl'
@@ -195,6 +260,35 @@ export const QueueMonitorPage: React.FC<QueueMonitorPageProps> = ({ snapshot }) 
             </div>
           </div>
         </div>
+      )}
+
+      {/* LIVE PACKET QUEUE VISUALIZER (Placed below Queue Deep Dive) */}
+      {selectedRouter && (
+        <LivePacketQueueVisualizer
+          router={selectedRouter}
+          simState={snapshot?.state || 'stopped'}
+          simTimeMs={snapshot?.sim_time_ms || 0}
+          onStart={onStart}
+          onPause={onPause}
+          onResume={onResume}
+          onStep={onStep}
+          onReset={onReset}
+          onSetRouterSchedulingPolicy={onSetRouterSchedulingPolicy}
+        />
+      )}
+
+      {/* Packet Burst & Test Sequence Injection Section */}
+      {selectedRouter && (
+        <PacketBurstSection
+          sourceRouter={selectedRouter.id}
+          destinationRouter={destinationRouter}
+          routerList={routerList}
+          isStoppedOrPaused={snapshot?.state !== 'running'}
+          onInjectBurst={handleBurst}
+          onInjectSequence={handleSequence}
+          onSourceChange={handleSelectRouter}
+          onDestinationChange={setDestinationRouter}
+        />
       )}
     </div>
   );

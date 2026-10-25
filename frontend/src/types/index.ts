@@ -1,8 +1,80 @@
 export type PacketPriority = 'critical' | 'high' | 'normal' | 'low';
 
-export type PacketStatus = 'created' | 'queued' | 'in_transit' | 'delivered' | 'dropped';
+export type PacketStatus = 'created' | 'queued' | 'processing' | 'in_transit' | 'delivered' | 'dropped';
 
 export type DropReason = 'queue_overflow' | 'router_failed' | 'link_failed' | 'unreachable' | 'ttl_exceeded';
+
+export interface PacketJourneyEvent {
+  id?: string;
+  packet_id?: string;
+  event_type: string;
+  stage: string;
+  router_id?: string | null;
+  link_id?: string | null;
+  timestamp_sim_ms?: number;
+  sim_time_ms?: number;
+  sequence_num: number;
+  message: string;
+  details?: Record<string, any>;
+}
+
+export interface PacketJourneyDetails {
+  packet_id: string;
+  status: PacketStatus;
+  source: string;
+  destination: string;
+  priority: PacketPriority;
+  payload_size_bytes: number;
+  created_at_sim_time: number;
+  delivered_at_sim_time?: number | null;
+  total_latency_ms?: number | null;
+  hop_count: number;
+  reroute_count: number;
+  drop_reason?: string | null;
+  current_router?: string | null;
+  next_router?: string | null;
+  current_link_id?: string | null;
+  transit_progress: number;
+  planned_route: string[];
+  traversed_route: string[];
+  events: PacketJourneyEvent[];
+}
+
+export interface RecentPacketSummary {
+  id: string;
+  source: string;
+  destination: string;
+  priority: PacketPriority;
+  status: PacketStatus;
+  created_at_sim_time: number;
+  delivered_at_sim_time?: number | null;
+  hop_count: number;
+  drop_reason?: string | null;
+}
+
+export interface QueuedPacketInfo {
+  id: string;
+  priority: PacketPriority;
+  source: string;
+  destination: string;
+  queue_position: number;
+  payload_size_bytes?: number;
+  hop_count?: number;
+  created_at_sim_time?: number;
+}
+
+export interface ProcessingPacketInfo {
+  id: string;
+  priority: PacketPriority;
+  source: string;
+  destination: string;
+  payload_size_bytes?: number;
+  hop_count?: number;
+  created_at_sim_time?: number;
+  remaining_ms: number;
+  progress: number;
+  processing_delay_ms: number;
+}
 
 export interface RouterState {
   id: string;
@@ -19,6 +91,8 @@ export interface RouterState {
   total_processed: number;
   total_dropped: number;
   is_processing: boolean;
+  queued_packets?: QueuedPacketInfo[];
+  processing_packet?: ProcessingPacketInfo | null;
 }
 
 export interface LinkState {

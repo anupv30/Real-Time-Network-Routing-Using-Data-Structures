@@ -5,9 +5,16 @@ import { InTransitPacketData, RouterState } from '../../types';
 interface PacketOverlayProps {
   inTransit: InTransitPacketData[];
   routers: Record<string, RouterState>;
+  selectedPacketId?: string | null;
+  onSelectPacket?: (packetId: string) => void;
 }
 
-export const PacketOverlay: React.FC<PacketOverlayProps> = ({ inTransit, routers }) => {
+export const PacketOverlay: React.FC<PacketOverlayProps> = ({
+  inTransit,
+  routers,
+  selectedPacketId,
+  onSelectPacket
+}) => {
   const { zoom } = useViewport();
   if (!inTransit || inTransit.length === 0) return null;
 
@@ -37,26 +44,34 @@ export const PacketOverlay: React.FC<PacketOverlayProps> = ({ inTransit, routers
             ? 'bg-slate-400 shadow-slate-400/80 border-slate-200'
             : 'bg-cyan-400 shadow-cyan-400/80 border-cyan-200';
 
-        return (
-          <div
-            key={pkt.packet_id}
-            style={{
-              position: 'absolute',
-              left: `${currentX}px`,
-              top: `${currentY}px`,
-              transform: `translate(-50%, -50%) scale(${1 / zoom})`,
-              transition: 'left 0.05s linear, top 0.05s linear',
-            }}
-            className="flex items-center gap-1"
-          >
+          const isSelected = selectedPacketId === pkt.packet_id;
+          return (
             <div
-              className={`w-3.5 h-3.5 rounded-full border shadow-md animate-pulse ${priorityColor}`}
-            />
-            <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-black/80 text-white font-bold border border-gray-700 backdrop-blur-sm">
-              {pkt.packet_id.split('-')[1] || pkt.packet_id}
-            </span>
-          </div>
-        );
+              key={pkt.packet_id}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectPacket?.(pkt.packet_id);
+              }}
+              style={{
+                position: 'absolute',
+                left: `${currentX}px`,
+                top: `${currentY}px`,
+                transform: `translate(-50%, -50%) scale(${1 / zoom})`,
+                transition: 'left 0.05s linear, top 0.05s linear',
+              }}
+              className={`flex items-center gap-1 pointer-events-auto cursor-pointer p-0.5 rounded transition-transform hover:scale-110 ${
+                isSelected ? 'ring-2 ring-cyan-400 bg-cyan-950/60 rounded-full' : ''
+              }`}
+              title={`Packet ${pkt.packet_id} (${pkt.priority.toUpperCase()}) - Click to track`}
+            >
+              <div
+                className={`w-3.5 h-3.5 rounded-full border shadow-md animate-pulse ${priorityColor}`}
+              />
+              <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-black/85 text-white font-bold border border-gray-700 backdrop-blur-sm">
+                {pkt.packet_id.split('-')[1] || pkt.packet_id}
+              </span>
+            </div>
+          );
       })}
     </div>
   );

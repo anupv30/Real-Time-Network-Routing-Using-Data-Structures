@@ -13,6 +13,7 @@ import { DocumentationPage } from './pages/DocumentationPage';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('simulator');
+  const [shortestPathQuery, setShortestPathQuery] = useState<{ source: string; destination: string } | null>(null);
   const {
     snapshot,
     connectionStatus,
@@ -76,6 +77,8 @@ export function App() {
               onToggleRouterCongestion={actions.toggleRouterCongestion}
               onToggleLinkFailure={actions.toggleLinkFailure}
               onToggleLinkCongestion={actions.toggleLinkCongestion}
+              initialShortestPathQuery={shortestPathQuery}
+              onClearShortestPathQuery={() => setShortestPathQuery(null)}
             />
           )}
 
@@ -90,9 +93,32 @@ export function App() {
             />
           )}
 
-          {activeTab === 'routing' && <RoutingPage snapshot={snapshot} />}
+          {activeTab === 'routing' && (
+            <RoutingPage
+              snapshot={snapshot}
+              onHighlightInSimulator={(src, dst) => {
+                setShortestPathQuery({ source: src, destination: dst });
+                setActiveTab('simulator');
+              }}
+            />
+          )}
 
-          {activeTab === 'queue' && <QueueMonitorPage snapshot={snapshot} />}
+          {activeTab === 'queue' && (
+            <QueueMonitorPage
+              snapshot={snapshot}
+              selectedRouterId={selectedNodeId || undefined}
+              onSelectRouter={setSelectedNodeId}
+              onStart={actions.start}
+              onPause={actions.pause}
+              onResume={actions.resume}
+              onStep={actions.step}
+              onReset={actions.reset}
+              onInjectPacket={actions.injectPacket}
+              onInjectBurst={actions.injectPacketBurst}
+              onSetRouterSchedulingPolicy={actions.setRouterSchedulingPolicy}
+              onConfigChange={actions.updateConfig}
+            />
+          )}
 
           {activeTab === 'analytics' && <AnalyticsPage snapshot={snapshot} />}
 

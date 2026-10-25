@@ -9,14 +9,16 @@ import {
   Clock,
   Layers,
   HelpCircle,
-  Play
+  Play,
+  Sparkles
 } from 'lucide-react';
 
 interface RoutingPageProps {
   snapshot: SimulationStateSnapshot | null;
+  onHighlightInSimulator?: (source: string, destination: string) => void;
 }
 
-export const RoutingPage: React.FC<RoutingPageProps> = ({ snapshot }) => {
+export const RoutingPage: React.FC<RoutingPageProps> = ({ snapshot, onHighlightInSimulator }) => {
   const routers = Object.keys(snapshot?.routers || {});
   const [source, setSource] = useState<string>(routers[0] || 'R1');
   const [destination, setDestination] = useState<string>(routers[routers.length - 1] || 'R5');
@@ -124,20 +126,33 @@ export const RoutingPage: React.FC<RoutingPageProps> = ({ snapshot }) => {
             </div>
           </div>
 
-          {/* Route Sequence Pills */}
+          {/* Route Sequence Pills & Canvas Link */}
           {result.is_reachable && (
-            <div className="flex flex-wrap items-center gap-2 py-2">
-              <span className="text-xs text-gray-400 font-semibold mr-2">Computed Route:</span>
-              {result.path.map((nodeId, idx) => (
-                <React.Fragment key={idx}>
-                  <span className="px-3 py-1 rounded-md bg-blue-950/60 border border-blue-500/40 text-blue-300 font-mono font-bold text-xs shadow-sm">
-                    {nodeId}
-                  </span>
-                  {idx < result.path.length - 1 && (
-                    <ArrowRight className="w-3.5 h-3.5 text-blue-400" />
-                  )}
-                </React.Fragment>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-3 py-2 border-t border-gray-800/80 pt-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-gray-400 font-semibold mr-1">Computed Route:</span>
+                {result.path.map((nodeId, idx) => (
+                  <React.Fragment key={idx}>
+                    <span className="px-3 py-1 rounded-md bg-blue-950/60 border border-blue-500/40 text-blue-300 font-mono font-bold text-xs shadow-sm">
+                      {nodeId}
+                    </span>
+                    {idx < result.path.length - 1 && (
+                      <ArrowRight className="w-3.5 h-3.5 text-blue-400" />
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+
+              {onHighlightInSimulator && (
+                <button
+                  onClick={() => onHighlightInSimulator(source, destination)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/30 text-emerald-300 hover:bg-emerald-600/50 border border-emerald-500/40 text-xs font-semibold shadow-sm transition"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  View on Network Topology
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           )}
         </div>

@@ -4,9 +4,10 @@ import { Terminal, Filter, Trash2, CheckCircle2, AlertTriangle, AlertOctagon, In
 
 interface EventLogFeedProps {
   events: EventLogItem[];
+  onSelectPacket?: (packetId: string) => void;
 }
 
-export const EventLogFeed: React.FC<EventLogFeedProps> = ({ events }) => {
+export const EventLogFeed: React.FC<EventLogFeedProps> = ({ events, onSelectPacket }) => {
   const [filterSeverity, setFilterSeverity] = useState<string>('all');
   const [search, setSearch] = useState<string>('');
   const [clearedBefore, setClearedBefore] = useState<number>(0);
@@ -110,7 +111,48 @@ export const EventLogFeed: React.FC<EventLogFeedProps> = ({ events }) => {
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 shrink-0">
                 [{e.event_type}]
               </span>
-              <span className="flex-1 break-words">{e.message}</span>
+              <span className="flex-1 break-words">
+                {(() => {
+                  const regex = /(PKT-[A-Za-z0-9]+)/g;
+                  const parts = e.message.split(regex);
+                  return (
+                    <>
+                      {parts.map((part, idx) => {
+                        if (regex.test(part)) {
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                onSelectPacket?.(part);
+                              }}
+                              title={`Track journey of packet ${part}`}
+                              className="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded bg-cyan-950/70 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] hover:bg-cyan-900 hover:text-cyan-100 hover:border-cyan-400 cursor-pointer transition-colors shadow-xs"
+                            >
+                              {part}
+                            </button>
+                          );
+                        }
+                        return <span key={idx}>{part}</span>;
+                      })}
+                      {e.packet_id && !e.message.includes(e.packet_id) && (
+                        <button
+                          type="button"
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            onSelectPacket?.(e.packet_id!);
+                          }}
+                          title={`Track journey of packet ${e.packet_id}`}
+                          className="inline-flex items-center ml-1 px-1.5 py-0.5 rounded bg-cyan-950/70 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] hover:bg-cyan-900 hover:text-cyan-100 hover:border-cyan-400 cursor-pointer transition-colors"
+                        >
+                          {e.packet_id}
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
+              </span>
             </div>
           ))
         )}

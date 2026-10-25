@@ -120,3 +120,80 @@ def test_engine_reset():
     assert engine.sim_time_ms == 0.0
     assert engine.queues["R1"].size() == 0
     assert engine.total_delivered_latency_ms == 0.0
+
+def test_snapshot_queued_packets_fifo():
+    engine = SimulationEngine(create_small_network())
+    engine.auto_generate = False
+    p_low = engine.create_packet("R1", "R5", priority=PacketPriority.LOW)
+    p_norm = engine.create_packet("R1", "R5", priority=PacketPriority.NORMAL)
+    p_high = engine.create_packet("R1", "R5", priority=PacketPriority.HIGH)
+    p_crit = engine.create_packet("R1", "R5", priority=PacketPriority.CRITICAL)
+
+    snap = engine.get_state_snapshot()
+    r1_queued = snap["routers"]["R1"]["queued_packets"]
+    assert len(r1_queued) == 4
+    # In FIFO: arrival order Low -> Normal -> High -> Critical
+    assert [p["priority"] for p in r1_queued] == ["low", "normal", "high", "critical"]
+    assert [p["id"] for p in r1_queued] == [p_low.id, p_norm.id, p_high.id, p_crit.id]
+
+def test_snapshot_queued_packets_priority():
+    engine = SimulationEngine(create_small_network())
+    engine.auto_generate = False
+    engine.topology.routers["R1"].scheduling_policy = "priority"
+    engine.queues["R1"].scheduling_policy = "priority"
+
+    p_low = engine.create_packet("R1", "R5", priority=PacketPriority.LOW)
+    p_norm = engine.create_packet("R1", "R5", priority=PacketPriority.NORMAL)
+    p_high = engine.create_packet("R1", "R5", priority=PacketPriority.HIGH)
+    p_crit = engine.create_packet("R1", "R5", priority=PacketPriority.CRITICAL)
+
+    snap = engine.get_state_snapshot()
+    r1_queued = snap["routers"]["R1"]["queued_packets"]
+    assert len(r1_queued) == 4
+    # In Priority: Critical -> High -> Normal -> Low
+    assert [p["priority"] for p in r1_queued] == ["critical", "high", "normal", "low"]
+    assert [p["id"] for p in r1_queued] == [p_crit.id, p_high.id, p_norm.id, p_low.id]
+
+def test_snapshot_processing_packet_separate_from_queue():
+    engine = SimulationEngine(create_small_network())
+    engine.auto_generate = False
+    p1 = engine.create_packet("R1", "R5", priority=PacketPriority.NORMAL)
+    p2 = engine.create_packet("R1", "R5", priority=PacketPriority.HIGH)
+
+    # Before tick, both in queue
+    snap = engine.get_state_snapshot()
+    assert len(snap["routers"]["R1"]["queued_packets"]) == 2
+    assert snap["routers"]["R1"]["processing_packet"] is None
+    assert snap["routers"]["R1"]["is_processing"] is False
+
+    # Tick 50ms - packet 1 is dequeued and starts processing at R1
+    engine.tick(50.0)
+    snap = engine.get_state_snapshot()
+    r1 = snap["routers"]["R1"]
+    assert r1["is_processing"] is True
+    assert r1["processing_packet"] is not None
+    assert r1["processing_packet"]["id"] == p1.id
+    # Only packet 2 remains in the queue!
+    assert len(r1["queued_packets"]) == 1
+    assert r1["queued_packets"][0]["id"] == p2.id
+    assert r1["queue_len"] == 1
+
+def test_burst_injection_and_tail_drop_sync():
+    engine = SimulationEngine(create_small_network())
+    engine.auto_generate = False
+    # Set R1 capacity to 10
+    engine.topology.routers["R1"].queue_capacity = 10
+    engine.queues["R1"].capacity = 10
+
+    # Inject 30 packets while stopped
+    for _ in range(30):
+        engine.create_packet("R1", "R5", priority=PacketPriority.NORMAL)
+
+    snap = engine.get_state_snapshot()
+    r1 = snap["routers"]["R1"]
+    assert r1["queue_len"] == 10
+    assert len(r1["queued_packets"]) == 10
+    assert r1["queue_utilization_pct"] == 100.0
+    assert r1["total_dropped"] == 20
+    assert snap["metrics"]["total_dropped"] == 20
+    assert snap["metrics"]["total_generated"] == 30

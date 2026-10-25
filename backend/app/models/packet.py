@@ -1,6 +1,6 @@
 import time
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 class PacketPriority(str, Enum):
@@ -19,6 +19,7 @@ PRIORITY_WEIGHTS = {
 class PacketStatus(str, Enum):
     CREATED = "created"
     QUEUED = "queued"
+    PROCESSING = "processing"
     IN_TRANSIT = "in_transit"
     DELIVERED = "delivered"
     DROPPED = "dropped"
@@ -30,6 +31,21 @@ class DropReason(str, Enum):
     UNREACHABLE = "unreachable"
     TTL_EXCEEDED = "ttl_exceeded"
 
+class PacketJourneyEvent(BaseModel):
+    sequence_num: int
+    timestamp_sim_ms: float
+    sim_time_ms: Optional[float] = None
+    event_type: str
+    stage: str  # "GENERATED", "QUEUED", "PROCESSING", "FORWARDED", "ARRIVED", "REROUTED", "DELIVERED", "DROPPED"
+    router_id: Optional[str] = None
+    link_id: Optional[str] = None
+    message: str
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.sim_time_ms is None:
+            self.sim_time_ms = self.timestamp_sim_ms
+
 class Packet(BaseModel):
     id: str
     source: str
@@ -39,6 +55,7 @@ class Packet(BaseModel):
     current_link_id: Optional[str] = None
     
     route: List[str] = Field(default_factory=list)
+    traversed_route: List[str] = Field(default_factory=list)
     current_route_index: int = 0
     
     priority: PacketPriority = PacketPriority.NORMAL
@@ -60,6 +77,9 @@ class Packet(BaseModel):
     transit_progress: float = 0.0
     transit_start_sim_time: Optional[float] = None
     transit_duration_ms: float = 0.0
+
+    # Ordered lifecycle event history
+    journey_events: List[PacketJourneyEvent] = Field(default_factory=list)
 
 class InTransitPacket(BaseModel):
     packet: Packet

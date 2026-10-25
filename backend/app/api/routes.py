@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.models.graph import NetworkTopology, RouterNode, NetworkLink
-from app.models.packet import PacketPriority
+from app.models.packet import PacketPriority, PacketStatus
 from app.algorithms.dijkstra import dijkstra_shortest_path, ShortestPathResult
 from app.simulation.engine import engine
 from app.simulation.topologies import BUILTIN_TOPOLOGIES
@@ -23,6 +23,13 @@ router = APIRouter(prefix="/api")
 class PacketInjectionRequest(BaseModel):
     source: str
     destination: str
+    priority: PacketPriority = PacketPriority.NORMAL
+    payload_size: int = 1500
+
+class PacketBurstRequest(BaseModel):
+    source: str
+    destination: str
+    count: int = 10
     priority: PacketPriority = PacketPriority.NORMAL
     payload_size: int = 1500
 
@@ -216,6 +223,137 @@ def inject_packet(req: PacketInjectionRequest):
     if not pkt:
         raise HTTPException(status_code=400, detail="Failed to create packet. Check source and destination routers.")
     return {"status": "injected", "packet": pkt}
+
+@router.post("/simulation/packet/burst")
+def inject_packet_burst(req: PacketBurstRequest):
+    if req.source not in engine.topology.routers or req.destination not in engine.topology.routers:
+        raise HTTPException(status_code=400, detail="Invalid source or destination router.")
+
+    injected = []
+    dropped = 0
+    count = max(1, min(100, req.count))
+    for _ in range(count):
+        pkt = engine.create_packet(
+            source=req.source,
+            destination=req.destination,
+            priority=req.priority,
+            payload_size=req.payload_size
+        )
+        if pkt:
+            if pkt.status == PacketStatus.DROPPED:
+                dropped += 1
+            else:
+                injected.append(pkt)
+    return {
+        "status": "burst_completed",
+        "total_requested": count,
+        "enqueued": len(injected),
+        "dropped": dropped
+    }
+
+# Packet Journey & History
+@router.get("/packets/recent")
+def get_recent_packets(
+    limit: int = Query(50, ge=1, le=200),
+    status: Optional[str] = None,
+    priority: Optional[str] = None
+):
+    packets = list(engine.packets_history.values())
+    if status:
+        stat_lower = status.lower()
+        packets = [p for p in packets if p.status.value.lower() == stat_lower or p.status == stat_lower]
+    if priority:
+        prio_lower = priority.lower()
+        packets = [p for p in packets if p.priority.value.lower() == prio_lower or p.priority == prio_lower]
+
+    packets = packets[-limit:]
+    packets.reverse()
+
+    return {
+        "total_retained": len(engine.packets_history),
+        "packets": [
+            {
+                "id": p.id,
+                "source": p.source,
+                "destination": p.destination,
+                "priority": p.priority.value,
+                "status": p.status.value,
+                "hop_count": p.hop_count,
+                "accumulated_latency_ms": round(p.accumulated_latency_ms, 1),
+                "created_at_sim_time": p.created_at_sim_time,
+                "delivered_at_sim_time": p.delivered_at_sim_time,
+                "drop_reason": p.drop_reason.value if p.drop_reason else None,
+                "current_router": p.current_router,
+                "current_link_id": p.current_link_id,
+                "next_router": p.next_router,
+                "route": p.route,
+                "traversed_route": p.traversed_route,
+                "events_count": len(p.journey_events)
+            }
+            for p in packets
+        ]
+    }
+
+@router.get("/packets/{packet_id}/journey")
+def get_packet_journey(packet_id: str):
+    pkt = engine.packets_history.get(packet_id)
+    if not pkt:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Packet '{packet_id}' not found or no longer retained in simulation history."
+        )
+
+    total_latency = None
+    if pkt.delivered_at_sim_time is not None:
+        total_latency = round(pkt.delivered_at_sim_time - pkt.created_at_sim_time, 1)
+    elif pkt.status == PacketStatus.DROPPED:
+        total_latency = round(pkt.accumulated_latency_ms, 1)
+
+    return {
+        "packet_id": pkt.id,
+        "source": pkt.source,
+        "destination": pkt.destination,
+        "priority": pkt.priority.value,
+        "payload_size_bytes": pkt.payload_size_bytes,
+        "status": pkt.status.value,
+        "drop_reason": pkt.drop_reason.value if pkt.drop_reason else None,
+        "current_router": pkt.current_router,
+        "next_router": pkt.next_router,
+        "current_link_id": pkt.current_link_id,
+        "planned_route": pkt.route,
+        "traversed_route": pkt.traversed_route,
+        "hop_count": pkt.hop_count,
+        "created_at_sim_time": pkt.created_at_sim_time,
+        "delivered_at_sim_time": pkt.delivered_at_sim_time,
+        "total_latency_ms": total_latency,
+        "accumulated_latency_ms": round(pkt.accumulated_latency_ms, 1),
+        "reroute_count": pkt.reroute_count,
+        "transit_progress": round(pkt.transit_progress, 3) if pkt.status == PacketStatus.IN_TRANSIT else None,
+        "events": [
+            {
+                "sequence_num": ev.sequence_num,
+                "timestamp_sim_ms": ev.timestamp_sim_ms,
+                "sim_time_ms": ev.timestamp_sim_ms,
+                "event_type": ev.event_type,
+                "stage": ev.stage,
+                "router_id": ev.router_id,
+                "link_id": ev.link_id,
+                "message": ev.message,
+                "details": ev.details
+            }
+            for ev in pkt.journey_events
+        ]
+    }
+
+@router.get("/packets/{packet_id}")
+def get_packet_details(packet_id: str):
+    pkt = engine.packets_history.get(packet_id)
+    if not pkt:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Packet '{packet_id}' not found or no longer retained in simulation history."
+        )
+    return pkt
 
 # Failures & Congestion
 @router.post("/simulation/failure/router")

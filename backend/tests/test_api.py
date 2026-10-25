@@ -85,3 +85,25 @@ def test_api_router_scheduling_policy():
     assert state["routers"]["R1"]["scheduling_policy"] == "priority"
 
     client.post("/api/topologies/small/load")
+
+def test_api_packet_burst():
+    client.post("/api/topologies/small/load")
+    client.post("/api/simulation/reset")
+
+    payload = {
+        "source": "R1",
+        "destination": "R5",
+        "count": 30,
+        "priority": "normal"
+    }
+    response = client.post("/api/simulation/packet/burst", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "burst_completed"
+    assert data["total_requested"] == 30
+    assert data["enqueued"] == 10  # Small topology R1 capacity is 10
+    assert data["dropped"] == 20
+    state = client.get("/api/simulation/state").json()
+    assert state["routers"]["R1"]["queue_len"] == 10
+    assert len(state["routers"]["R1"]["queued_packets"]) == 10
+    assert state["routers"]["R1"]["total_dropped"] == 20

@@ -5,7 +5,7 @@ import uuid
 from typing import Dict, List, Optional, Callable, Any
 from app.config import settings
 from app.models.graph import NetworkTopology, RouterNode, NetworkLink
-from app.models.packet import Packet, PacketPriority, PacketStatus, DropReason, InTransitPacket
+from app.models.packet import Packet, PacketPriority, PacketStatus, DropReason, InTransitPacket, PacketJourneyEvent
 from app.models.metrics import SimulationMetrics, EventLogItem, MetricSnapshot
 from app.simulation.queue import RouterQueue
 from app.algorithms.dijkstra import dijkstra_shortest_path
@@ -44,6 +44,7 @@ class SimulationEngine:
         
         # Packet registry: packet_id -> Packet (keep last 500 for inspection)
         self.packets_history: Dict[str, Packet] = {}
+        self._event_sequence_counter: int = 0
         
         # Events & Metrics
         self.event_log: List[EventLogItem] = []
@@ -94,12 +95,37 @@ class SimulationEngine:
         if len(self.event_log) > 200:
             self.event_log.pop(0)
 
+    def _record_packet_event(
+        self,
+        pkt: Packet,
+        event_type: str,
+        stage: str,
+        message: str,
+        router_id: Optional[str] = None,
+        link_id: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None
+    ):
+        self._event_sequence_counter += 1
+        event = PacketJourneyEvent(
+            sequence_num=self._event_sequence_counter,
+            timestamp_sim_ms=round(self.sim_time_ms, 1),
+            sim_time_ms=round(self.sim_time_ms, 1),
+            event_type=event_type,
+            stage=stage,
+            router_id=router_id,
+            link_id=link_id,
+            message=message,
+            details=details or {}
+        )
+        pkt.journey_events.append(event)
+
     def load_topology(self, new_topology: NetworkTopology):
         self.stop()
         self.topology = new_topology
         self._init_queues()
         self.in_transit_packets.clear()
         self.packets_history.clear()
+        self._event_sequence_counter = 0
         self.event_log.clear()
         self.metrics = SimulationMetrics()
         self.metric_snapshots.clear()
@@ -140,6 +166,7 @@ class SimulationEngine:
             created_at_sim_time=self.sim_time_ms,
             status=PacketStatus.CREATED,
             route=path_res.path,
+            traversed_route=[source],
             current_route_index=0
         )
         
@@ -147,11 +174,28 @@ class SimulationEngine:
         self.packets_history[pkt_id] = pkt
         if len(self.packets_history) > 500:
             self.packets_history.pop(next(iter(self.packets_history)))
+
+        self._record_packet_event(
+            pkt,
+            event_type="packet.generated",
+            stage="GENERATED",
+            router_id=source,
+            message=f"Packet {pkt_id} [{priority.value.upper()}] generated at {source} targeting {destination}.",
+            details={"priority": priority.value, "planned_route": path_res.path}
+        )
         
         if not path_res.is_reachable or len(path_res.path) == 0:
             pkt.status = PacketStatus.DROPPED
             pkt.drop_reason = DropReason.UNREACHABLE
             self.metrics.total_dropped += 1
+            self._record_packet_event(
+                pkt,
+                event_type="packet.dropped",
+                stage="DROPPED",
+                router_id=source,
+                message=f"Packet {pkt_id} dropped: Destination {destination} unreachable from {source}.",
+                details={"reason": DropReason.UNREACHABLE.value}
+            )
             self.log_event("packet.dropped", f"Packet {pkt_id} dropped: Destination {destination} unreachable from {source}.", "error", router_id=source, packet_id=pkt_id)
             return pkt
 
@@ -159,17 +203,46 @@ class SimulationEngine:
         q = self.queues.get(source)
         if q and self.topology.routers[source].status != "failed":
             enqueued = q.enqueue(pkt)
+            self.topology.routers[source].current_queue_len = q.size()
+            self.topology.routers[source].total_dropped = q.total_dropped
             if enqueued:
+                self._record_packet_event(
+                    pkt,
+                    event_type="packet.queued",
+                    stage="QUEUED",
+                    router_id=source,
+                    message=f"Packet {pkt_id} [{priority.value.upper()}] enqueued in {source} buffer ({q.size()}/{q.capacity}, {q.scheduling_policy.upper()}).",
+                    details={"queue_len": q.size(), "capacity": q.capacity, "policy": q.scheduling_policy}
+                )
                 self.log_event("packet.queued", f"Packet {pkt_id} [{priority.value.upper()}] enqueued at source router {source}.", "info", router_id=source, packet_id=pkt_id)
             else:
                 self.metrics.total_dropped += 1
+                self._record_packet_event(
+                    pkt,
+                    event_type="packet.dropped",
+                    stage="DROPPED",
+                    router_id=source,
+                    message=f"Packet {pkt_id} dropped at {source}: Tail drop (queue full {q.size()}/{q.capacity}).",
+                    details={"reason": DropReason.QUEUE_OVERFLOW.value}
+                )
                 self.log_event("packet.dropped", f"Packet {pkt_id} dropped at {source}: Tail drop (queue full {q.size()}/{q.capacity}).", "warning", router_id=source, packet_id=pkt_id)
         else:
             pkt.status = PacketStatus.DROPPED
             pkt.drop_reason = DropReason.ROUTER_FAILED
             self.metrics.total_dropped += 1
+            if source in self.topology.routers:
+                self.topology.routers[source].total_dropped += 1
+            self._record_packet_event(
+                pkt,
+                event_type="packet.dropped",
+                stage="DROPPED",
+                router_id=source,
+                message=f"Packet {pkt_id} dropped: Source router {source} is offline/failed.",
+                details={"reason": DropReason.ROUTER_FAILED.value}
+            )
             self.log_event("packet.dropped", f"Packet {pkt_id} dropped: Source router {source} is offline/failed.", "error", router_id=source, packet_id=pkt_id)
 
+        self._update_metrics()
         return pkt
 
     def fail_router(self, router_id: str):
@@ -181,6 +254,17 @@ class SimulationEngine:
             if q:
                 dropped = q.clear()
                 self.metrics.total_dropped += len(dropped)
+                for dp in dropped:
+                    dp.status = PacketStatus.DROPPED
+                    dp.drop_reason = DropReason.ROUTER_FAILED
+                    self._record_packet_event(
+                        dp,
+                        event_type="packet.dropped",
+                        stage="DROPPED",
+                        router_id=router_id,
+                        message=f"Packet {dp.id} dropped: Router {router_id} failed while packet was in buffer/processing.",
+                        details={"reason": DropReason.ROUTER_FAILED.value}
+                    )
             self.log_event("router.failed", f"Router {router_id} FAILED! Dropped {len(dropped)} queued packets.", "error", router_id=router_id)
             # Reroute eligible in-flight packets heading toward this router
             self._reroute_affected_packets()
@@ -201,6 +285,14 @@ class SimulationEngine:
                     item.packet.status = PacketStatus.DROPPED
                     item.packet.drop_reason = DropReason.LINK_FAILED
                     self.metrics.total_dropped += 1
+                    self._record_packet_event(
+                        item.packet,
+                        event_type="packet.dropped",
+                        stage="DROPPED",
+                        link_id=link_id,
+                        message=f"Packet {item.packet.id} dropped: In transit on failed link {link_id}.",
+                        details={"reason": DropReason.LINK_FAILED.value}
+                    )
                     self.log_event("packet.dropped", f"Packet {item.packet.id} dropped: In transit on failed link {link_id}.", "error", link_id=link_id, packet_id=item.packet.id)
                 else:
                     surviving_in_transit.append(item)
@@ -257,15 +349,32 @@ class SimulationEngine:
                 if needs_reroute:
                     res = dijkstra_shortest_path(self.topology, r_id, pkt.destination, record_trace=False)
                     if res.is_reachable and len(res.path) > 0:
+                        old_route = list(pkt.route)
                         pkt.route = pkt.route[:pkt.current_route_index] + res.path
                         pkt.reroute_count += 1
                         self.metrics.total_reroutes += 1
+                        self._record_packet_event(
+                            pkt,
+                            event_type="packet.rerouted",
+                            stage="REROUTED",
+                            router_id=r_id,
+                            message=f"Packet {pkt.id} rerouted at {r_id} due to topology change. New planned route: {res.path}.",
+                            details={"old_route": old_route, "new_route": pkt.route}
+                        )
                         self.log_event("packet.rerouted", f"Packet {pkt.id} rerouted at {r_id} via {res.path}.", "warning", router_id=r_id, packet_id=pkt.id)
                     else:
                         # Destination unreachable
                         pkt.status = PacketStatus.DROPPED
                         pkt.drop_reason = DropReason.UNREACHABLE
                         self.metrics.total_dropped += 1
+                        self._record_packet_event(
+                            pkt,
+                            event_type="packet.dropped",
+                            stage="DROPPED",
+                            router_id=r_id,
+                            message=f"Packet {pkt.id} dropped at {r_id}: No alternative route to {pkt.destination}.",
+                            details={"reason": DropReason.UNREACHABLE.value}
+                        )
                         self.log_event("packet.dropped", f"Packet {pkt.id} dropped at {r_id}: No alternative route to {pkt.destination}.", "error", router_id=r_id, packet_id=pkt.id)
 
     def _find_link(self, u: str, v: str) -> Optional[NetworkLink]:
@@ -316,12 +425,22 @@ class SimulationEngine:
             pkt.hop_count += 1
             pkt.transit_progress = 0.0
             pkt.current_link_id = None
+            if not pkt.traversed_route or pkt.traversed_route[-1] != target_router_id:
+                pkt.traversed_route.append(target_router_id)
 
             target_router = self.topology.routers.get(target_router_id)
             if not target_router or target_router.status == "failed":
                 pkt.status = PacketStatus.DROPPED
                 pkt.drop_reason = DropReason.ROUTER_FAILED
                 self.metrics.total_dropped += 1
+                self._record_packet_event(
+                    pkt,
+                    event_type="packet.dropped",
+                    stage="DROPPED",
+                    router_id=target_router_id,
+                    message=f"Packet {pkt.id} dropped: Target router {target_router_id} is failed.",
+                    details={"reason": DropReason.ROUTER_FAILED.value}
+                )
                 self.log_event("packet.dropped", f"Packet {pkt.id} dropped: Target router {target_router_id} is failed.", "error", router_id=target_router_id, packet_id=pkt.id)
                 continue
 
@@ -347,17 +466,52 @@ class SimulationEngine:
                     else max(self.metrics.max_latency_ms, total_latency)
                 )
                 target_router.total_processed += 1
+                self._record_packet_event(
+                    pkt,
+                    event_type="packet.delivered",
+                    stage="DELIVERED",
+                    router_id=target_router_id,
+                    message=f"Packet {pkt.id} successfully DELIVERED to destination {pkt.destination} in {total_latency:.1f}ms across {pkt.hop_count} hops.",
+                    details={"latency_ms": round(total_latency, 1), "hops": pkt.hop_count}
+                )
                 self.log_event("packet.delivered", f"Packet {pkt.id} DELIVERED to {pkt.destination} in {total_latency:.1f}ms across {pkt.hop_count} hops.", "success", router_id=target_router_id, packet_id=pkt.id)
                 continue
+
+            # Arrived at intermediate router
+            self._record_packet_event(
+                pkt,
+                event_type="packet.arrived",
+                stage="ARRIVED",
+                router_id=target_router_id,
+                link_id=item.link_id,
+                message=f"Packet {pkt.id} arrived at intermediate router {target_router_id} via link {item.link_id}.",
+                details={"hop": pkt.hop_count}
+            )
 
             # Otherwise, enqueue into target router for further forwarding
             q = self.queues.get(target_router_id)
             if q:
                 enqueued = q.enqueue(pkt)
                 if enqueued:
+                    self._record_packet_event(
+                        pkt,
+                        event_type="packet.queued",
+                        stage="QUEUED",
+                        router_id=target_router_id,
+                        message=f"Packet {pkt.id} enqueued in {target_router_id} buffer ({q.size()}/{q.capacity}, {q.scheduling_policy.upper()}).",
+                        details={"queue_len": q.size(), "capacity": q.capacity, "policy": q.scheduling_policy}
+                    )
                     self.log_event("packet.queued", f"Packet {pkt.id} arrived and queued at {target_router_id}.", "info", router_id=target_router_id, packet_id=pkt.id)
                 else:
                     self.metrics.total_dropped += 1
+                    self._record_packet_event(
+                        pkt,
+                        event_type="packet.dropped",
+                        stage="DROPPED",
+                        router_id=target_router_id,
+                        message=f"Packet {pkt.id} dropped at {target_router_id}: Tail drop (buffer overflow {q.size()}/{q.capacity}).",
+                        details={"reason": DropReason.QUEUE_OVERFLOW.value}
+                    )
                     self.log_event("packet.dropped", f"Packet {pkt.id} dropped at {target_router_id}: Tail drop (buffer overflow).", "warning", router_id=target_router_id, packet_id=pkt.id)
 
         # 3. Router Queue Processing & Packet Forwarding
@@ -379,6 +533,14 @@ class SimulationEngine:
                     q.processing_finish_sim_time = None
                     router.total_processed += 1
 
+                    self._record_packet_event(
+                        finished_pkt,
+                        event_type="packet.processing_finished",
+                        stage="PROCESSING_COMPLETED",
+                        router_id=r_id,
+                        message=f"CPU processing completed at router {r_id}."
+                    )
+
                     # Forward to next hop
                     if finished_pkt.current_route_index + 1 < len(finished_pkt.route):
                         next_router_id = finished_pkt.route[finished_pkt.current_route_index + 1]
@@ -393,16 +555,33 @@ class SimulationEngine:
                             # Dynamic Reroute!
                             reroute_res = dijkstra_shortest_path(self.topology, r_id, finished_pkt.destination, record_trace=False)
                             if reroute_res.is_reachable and len(reroute_res.path) > 1:
+                                old_route = list(finished_pkt.route)
                                 finished_pkt.route = finished_pkt.route[:finished_pkt.current_route_index] + reroute_res.path
                                 next_router_id = finished_pkt.route[finished_pkt.current_route_index + 1]
                                 link = self._find_link(r_id, next_router_id)
                                 finished_pkt.reroute_count += 1
                                 self.metrics.total_reroutes += 1
+                                self._record_packet_event(
+                                    finished_pkt,
+                                    event_type="packet.rerouted",
+                                    stage="REROUTED",
+                                    router_id=r_id,
+                                    message=f"Packet {finished_pkt.id} rerouted from {r_id} to new path: {reroute_res.path}.",
+                                    details={"old_route": old_route, "new_route": finished_pkt.route}
+                                )
                                 self.log_event("packet.rerouted", f"Packet {finished_pkt.id} rerouted from {r_id} to new path: {reroute_res.path}.", "warning", router_id=r_id, packet_id=finished_pkt.id)
                             else:
                                 finished_pkt.status = PacketStatus.DROPPED
                                 finished_pkt.drop_reason = DropReason.LINK_FAILED if link_failed else DropReason.ROUTER_FAILED
                                 self.metrics.total_dropped += 1
+                                self._record_packet_event(
+                                    finished_pkt,
+                                    event_type="packet.dropped",
+                                    stage="DROPPED",
+                                    router_id=r_id,
+                                    message=f"Packet {finished_pkt.id} dropped at {r_id}: No alternative route to destination.",
+                                    details={"reason": (DropReason.LINK_FAILED if link_failed else DropReason.ROUTER_FAILED).value}
+                                )
                                 self.log_event("packet.dropped", f"Packet {finished_pkt.id} dropped at {r_id}: No alternative route to destination.", "error", router_id=r_id, packet_id=finished_pkt.id)
                                 continue
 
@@ -424,15 +603,33 @@ class SimulationEngine:
                                 end_sim_time=self.sim_time_ms + link.latency_ms
                             )
                             self.in_transit_packets.append(in_transit_item)
+                            self._record_packet_event(
+                                finished_pkt,
+                                event_type="packet.forwarded",
+                                stage="FORWARDED",
+                                router_id=r_id,
+                                link_id=link.id,
+                                message=f"Packet {finished_pkt.id} forwarded from {r_id} onto link {link.id} -> {next_router_id} (latency: {link.latency_ms:.1f}ms).",
+                                details={"link_id": link.id, "next_router": next_router_id, "latency_ms": link.latency_ms}
+                            )
                             self.log_event("packet.forwarded", f"Packet {finished_pkt.id} forwarded from {r_id} onto link {link.id} -> {next_router_id}.", "info", router_id=r_id, link_id=link.id, packet_id=finished_pkt.id)
 
             # If router is idle and queue has packets, start processing next packet
             if not q.is_processing and q.size() > 0:
                 next_pkt = q.dequeue()
                 if next_pkt:
+                    next_pkt.status = PacketStatus.PROCESSING
                     q.is_processing = True
                     q.current_processing_packet = next_pkt
                     q.processing_finish_sim_time = self.sim_time_ms + router.processing_delay_ms
+                    self._record_packet_event(
+                        next_pkt,
+                        event_type="packet.processing_started",
+                        stage="PROCESSING",
+                        router_id=r_id,
+                        message=f"Packet {next_pkt.id} dequeued and processing started at {r_id} (delay: {router.processing_delay_ms:.1f}ms, {q.scheduling_policy.upper()}).",
+                        details={"delay_ms": router.processing_delay_ms, "policy": q.scheduling_policy}
+                    )
 
             # Sync router stats
             router.current_queue_len = q.size()
@@ -507,6 +704,43 @@ class SimulationEngine:
         router_states = {}
         for r_id, router in self.topology.routers.items():
             q = self.queues.get(r_id)
+            queued_packets = []
+            if q:
+                for idx, pkt in enumerate(q.get_queued_packets()):
+                    queued_packets.append({
+                        "id": pkt.id,
+                        "priority": pkt.priority.value,
+                        "source": pkt.source,
+                        "destination": pkt.destination,
+                        "queue_position": idx,
+                        "payload_size_bytes": pkt.payload_size_bytes,
+                        "hop_count": pkt.hop_count,
+                        "created_at_sim_time": pkt.created_at_sim_time,
+                    })
+
+            processing_packet = None
+            if q and q.is_processing and q.current_processing_packet and router.status != "failed":
+                proc_pkt = q.current_processing_packet
+                finish_time = q.processing_finish_sim_time or self.sim_time_ms
+                remaining = max(0.0, finish_time - self.sim_time_ms)
+                delay = router.processing_delay_ms
+                progress = 1.0
+                if delay > 0:
+                    progress = min(1.0, max(0.0, 1.0 - (remaining / delay)))
+
+                processing_packet = {
+                    "id": proc_pkt.id,
+                    "priority": proc_pkt.priority.value,
+                    "source": proc_pkt.source,
+                    "destination": proc_pkt.destination,
+                    "payload_size_bytes": proc_pkt.payload_size_bytes,
+                    "hop_count": proc_pkt.hop_count,
+                    "created_at_sim_time": proc_pkt.created_at_sim_time,
+                    "remaining_ms": round(remaining, 1),
+                    "progress": round(progress, 3),
+                    "processing_delay_ms": delay,
+                }
+
             router_states[r_id] = {
                 "id": r_id,
                 "label": router.label,
@@ -520,8 +754,10 @@ class SimulationEngine:
                 "queue_utilization_pct": round(q.utilization_pct(), 1) if q else 0.0,
                 "priority_breakdown": q.get_priority_breakdown() if q else {},
                 "total_processed": router.total_processed,
-                "total_dropped": router.total_dropped,
-                "is_processing": q.is_processing if q else False,
+                "total_dropped": q.total_dropped if q else router.total_dropped,
+                "is_processing": bool(q and q.is_processing and router.status != "failed"),
+                "queued_packets": queued_packets,
+                "processing_packet": processing_packet,
             }
 
         # Link summary
@@ -642,6 +878,7 @@ class SimulationEngine:
     def reset(self):
         self.stop()
         self.sim_time_ms = 0.0
+        self._event_sequence_counter = 0
         self.in_transit_packets.clear()
         self.packets_history.clear()
         self.event_log.clear()

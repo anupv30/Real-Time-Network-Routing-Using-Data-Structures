@@ -137,6 +137,17 @@ export function useSimulation() {
     return result;
   };
 
+  const handleInjectPacketBurst = async (
+    source: string,
+    destination: string,
+    count: number,
+    priority: PacketPriority = 'normal'
+  ) => {
+    const result = await api.injectPacketBurst({ source, destination, count, priority });
+    await refreshSimulationSnapshot();
+    return result;
+  };
+
   const handleToggleRouterFailure = async (routerId: string) => {
     await api.toggleRouterFailure(routerId);
     await refreshSimulationSnapshot();
@@ -199,6 +210,7 @@ export function useSimulation() {
       reset: handleReset,
       step: handleStep,
       injectPacket: handleInjectPacket,
+      injectPacketBurst: handleInjectPacketBurst,
       toggleRouterFailure: handleToggleRouterFailure,
       setRouterSchedulingPolicy: handleSetRouterSchedulingPolicy,
       toggleLinkFailure: handleToggleLinkFailure,
